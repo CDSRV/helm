@@ -22,7 +22,6 @@
 : ${DEBUG:="false"}
 : ${VERIFY_CHECKSUM:="true"}
 : ${VERIFY_SIGNATURES:="false"}
-: ${HELM_INSTALL_DIR:="/usr/local/bin"}
 : ${GPG_PUBRING:="pubring.kbx"}
 
 HAS_CURL="$(type "curl" &> /dev/null && echo true || echo false)"
@@ -53,15 +52,6 @@ initOS() {
     # Minimalist GNU for Windows
     mingw*) OS='windows';;
   esac
-}
-
-# runs the given command as root (detects if we are root already)
-runAsRoot() {
-  if [ $EUID -ne 0 -a "$USE_SUDO" = "true" ]; then
-    sudo "${@}"
-  else
-    "${@}"
-  fi
 }
 
 # verifySupported checks that the os/arch combination is supported for
@@ -169,7 +159,7 @@ installFile() {
   tar xf "$HELM_TMP_FILE" -C "$HELM_TMP"
   HELM_TMP_BIN="$HELM_TMP/$OS-$ARCH/helm"
   echo "Preparing to install $BINARY_NAME into ${HELM_INSTALL_DIR}"
-  runAsRoot cp "$HELM_TMP_BIN" "$HELM_INSTALL_DIR/$BINARY_NAME"
+  $SUDO cp "$HELM_TMP_BIN" "$HELM_INSTALL_DIR/$BINARY_NAME"
   echo "$BINARY_NAME installed into $HELM_INSTALL_DIR/$BINARY_NAME"
 }
 
@@ -312,6 +302,9 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 set +u
+
+[ $EUID = 0 ] || SUDO="sudo -EH" && HELM_INSTALL_DIR=${HELM_INSTALL_DIR:-"/usr/local/bin"}
+[ $USE_SUDO = "false" ] && unset SUDO && HELM_INSTALL_DIR=${HELM_INSTALL_DIR:-"$HOME/.local/bin"} && mkdir -p $HELM_INSTALL_DIR
 
 initArch
 initOS
