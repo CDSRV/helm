@@ -17,6 +17,10 @@
 # The install script is based off of the MIT-licensed script from glide,
 # the package manager for Go: https://github.com/Masterminds/glide.sh/blob/master/get
 
+# export HELM_INSTALL_DIR # to provide a custom location
+#  ( default / with sudo / as root ) : /usr/local/bin
+#  --no-sudo : $HOME/.local/bin
+
 : ${BINARY_NAME:="helm"}
 : ${USE_SUDO:="true"}
 : ${DEBUG:="false"}
@@ -154,6 +158,17 @@ verifyFile() {
 
 # installFile installs the Helm binary.
 installFile() {
+  if [ "${USE_SUDO}" = "true" ]; then
+    SUDO="sudo -EH"
+    if [ $EUID = 0 ]; then
+     unset SUDO
+    fi 
+    HELM_INSTALL_DIR="${HELM_INSTALL_DIR:-"/usr/local/bin"}"
+  else
+    unset SUDO
+    HELM_INSTALL_DIR="${HELM_INSTALL_DIR:-"$HOME/.local/bin"}"
+    mkdir -p "$HELM_INSTALL_DIR"
+  fi
   HELM_TMP="$HELM_TMP_ROOT/$BINARY_NAME"
   mkdir -p "$HELM_TMP"
   tar xf "$HELM_TMP_FILE" -C "$HELM_TMP"
@@ -303,8 +318,6 @@ while [[ $# -gt 0 ]]; do
 done
 set +u
 
-[ $EUID = 0 ] || SUDO="sudo -EH" && HELM_INSTALL_DIR=${HELM_INSTALL_DIR:-"/usr/local/bin"}
-[ $USE_SUDO = "false" ] && unset SUDO && HELM_INSTALL_DIR=${HELM_INSTALL_DIR:-"$HOME/.local/bin"} && mkdir -p $HELM_INSTALL_DIR
 
 initArch
 initOS
