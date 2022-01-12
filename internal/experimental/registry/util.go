@@ -17,41 +17,32 @@ limitations under the License.
 package registry // import "helm.sh/helm/v3/internal/experimental/registry"
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"time"
+	"strings"
 
-	orascontext "github.com/deislabs/oras/pkg/context"
-	units "github.com/docker/go-units"
 	"github.com/sirupsen/logrus"
+	orascontext "oras.land/oras-go/pkg/context"
+	"oras.land/oras-go/pkg/registry"
+
+	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/chart/loader"
 )
 
-// byteCountBinary produces a human-readable file size
-func byteCountBinary(b int64) string {
-	const unit = 1024
-	if b < unit {
-		return fmt.Sprintf("%d B", b)
-	}
-	div, exp := int64(unit), 0
-	for n := b / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
+// IsOCI determines whether or not a URL is to be treated as an OCI URL
+func IsOCI(url string) bool {
+	return strings.HasPrefix(url, fmt.Sprintf("%s://", OCIScheme))
 }
 
-// shortDigest returns first 7 characters of a sha256 digest
-func shortDigest(digest string) string {
-	if len(digest) == 64 {
-		return digest[:7]
+// extractChartMeta is used to extract a chart metadata from a byte array
+func extractChartMeta(chartData []byte) (*chart.Metadata, error) {
+	ch, err := loader.LoadArchive(bytes.NewReader(chartData))
+	if err != nil {
+		return nil, err
 	}
-	return digest
-}
-
-// timeAgo returns a human-readable timestamp representing time that has passed
-func timeAgo(t time.Time) string {
-	return units.HumanDuration(time.Now().UTC().Sub(t))
+	return ch.Metadata, nil
 }
 
 // ctx retrieves a fresh context.
@@ -63,4 +54,29 @@ func ctx(out io.Writer, debug bool) context.Context {
 	ctx := orascontext.WithLoggerFromWriter(context.Background(), out)
 	orascontext.GetLogger(ctx).Logger.SetLevel(logrus.DebugLevel)
 	return ctx
+}
+
+// parseReference will parse and validate the reference, and clean tags when
+// applicable tags are only cleaned when plus (+) signs are present, and are
+// converted to underscores (_) before pushing
+// See https://github.com/helm/helm/issues/10166
+func parseReference(raw string) (registry.Reference, error) {
+	// The sole possible reference modification is replacing plus (+) signs
+	// present in tags with underscores (_). To do this properly, we first
+	// need to identify a tag, and then pass it on to the reference parser
+	// NOTE: Passing immediately to the reference parser will fail since (+)
+	// signs are an invalid tag character, and simply replacing all plus (+)
+	// occurrences could invalidate other portions of the URI
+	parts := strings.Split(raw, ":")
+	if len(parts) > 1 && !strings.Contains(parts[len(parts)-1], "/") {
+		tag := parts[len(parts)-1]
+
+		if tag != "" {
+			// Replace any plus (+) signs with known underscore (_) conversion
+			newTag := strings.ReplaceAll(tag, "+", "_")
+			raw = strings.ReplaceAll(raw, tag, newTag)
+		}
+	}
+
+	return registry.ParseReference(raw)
 }
